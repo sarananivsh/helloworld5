@@ -1,17 +1,18 @@
-name: Auto Retry Dependencies Merges
+name: Auto Retry Merges for UNKNOWN PRs
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger for the workflow
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'  # Runs every hour (customize as needed)
 
 jobs:
-  auto-merge-failed-prs:
+  retry-unknown-prs:
     runs-on: ubuntu-latest
 
     permissions:
-      pull-requests: write  # Allow merging PRs
-      contents: read  # Read access to repo contents
+      pull-requests: write  # Ensure permission to merge PRs
+      contents: write  # Allow pushing commits
+      issues: write  # Allow commenting on PRs if needed
 
     steps:
       - name: Checkout repository
@@ -22,27 +23,45 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh
 
-      - name: Retry PRs with 'dependencies' label, including 'UNKNOWN' status
+      - name: Retry 'UNKNOWN' state PRs by re-triggering status checks
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Pass the GITHUB_TOKEN to gh CLI
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Use GitHub token for authentication
         run: |
+          # Fetch all open PRs with 'dependencies' label and check their mergeable status
           pr_list=$(gh pr list --state open --label "dependencies" --json number,mergeable -q '.[].number')
           echo "PR list with dependencies: $pr_list"
           
           for pr_number in $pr_list; do
+            # Get the current mergeable status
             mergeable_status=$(gh pr view $pr_number --json mergeable -q '.mergeable')
 
             if [[ "$mergeable_status" == "CONFLICT" ]]; then
                 echo "PR #$pr_number has conflicts. Skipping merge attempt."
             elif [[ "$mergeable_status" == "UNKNOWN" ]]; then
-                echo "PR #$pr_number is in 'UNKNOWN' state. Attempting to merge... (Retry)"
+                echo "PR #$pr_number is in 'UNKNOWN' state. Re-triggering status checks..."
+                
+                # Step 1: Add a comment to trigger a re-check (GitHub reprocesses the PR)
+                gh pr comment $pr_number --body "Re-triggering status checks for PR #$pr_number."
+                
+                # Step 2: Push an empty commit to trigger status re-evaluation (GitHub rechecks the mergeable state)
+                git checkout $pr_number
+                git commit --allow-empty -m "Triggering status recheck for PR #$pr_number"
+                git push origin HEAD
+                
+                # Step 3: Wait a few seconds for status checks to update (optional)
+                echo "Waiting for status checks to complete..."
+                sleep 30  # Wait for 30 seconds for status checks to complete
+                
+                # Step 4: Retry the merge
+                echo "Attempting to auto-merge PR #$pr_number..."
                 if ! gh pr merge $pr_number --merge --auto --delete-branch; then
-                  echo "Failed to merge PR #$pr_number despite being in 'UNKNOWN' state."
+                  echo "Failed to merge PR #$pr_number despite re-triggering status checks."
                 else
-                  echo "Successfully merged PR #$pr_number in 'UNKNOWN' state."
+                  echo "Successfully merged PR #$pr_number."
                 fi
             else
-                echo "Attempting to auto-merge PR #$pr_number..."
+                echo "PR #$pr_number is in a valid state. Attempting to auto-merge..."
+                # Attempt auto-merge for non-UNKNOWN state PRs
                 if ! gh pr merge $pr_number --merge --auto --delete-branch; then
                   echo "Failed to merge PR #$pr_number."
                 else
@@ -50,24 +69,3 @@ jobs:
                 fi
             fi
           done
-
-
-
-      - name: Retry Failed PRs in Subsequent Workflow
-        run: |
-          # If there are failed PRs, attempt to merge them in the next run
-          if [ -f failed_prs.txt ]; then
-            echo "Reprocessing failed PRs..."
-            failed_prs=$(cat failed_prs.txt)
-            for failed_pr in $failed_prs; do
-              pr_number=$(echo $failed_pr | awk '{print $NF}')  # Extract the PR number
-              echo "Attempting to re-merge PR #$pr_number..."
-              
-              # Retry the merge for the failed PR
-              if ! gh pr merge $pr_number --merge --auto --delete-branch; then
-                echo "Failed to re-merge PR #$pr_number after retry."
-              else
-                echo "Successfully re-merged PR #$pr_number."
-              fi
-            done
-          fi
