@@ -1,0 +1,45 @@
+name: Auto Retry Failed PR Merges
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Runs every hour
+  workflow_dispatch:  # Allows manual triggering of the workflow
+
+jobs:
+  retry-auto-merge:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install GitHub CLI
+        run: |
+          # Install GitHub CLI
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Retry failed auto-merges
+        run: |
+          # Authenticate with GitHub CLI
+          echo "$GITHUB_TOKEN" | gh auth login --with-token
+
+          # Check all open PRs and attempt to merge those that failed auto-merge
+          pr_list=$(gh pr list --state open --json number,mergeable -q '.[].number')
+
+          # Loop through each PR number to check mergeability and retry if failed
+          for pr_number in $pr_list; do
+            # Check the mergeable status of each PR
+            mergeable_status=$(gh pr view $pr_number --json mergeable -q '.mergeable')
+
+            if [[ "$mergeable_status" == "CONFLICT" ]]; then
+                echo "PR #$pr_number has conflicts. Skipping merge attempt."
+            elif [[ "$mergeable_status" == "UNKNOWN" ]]; then
+                echo "PR #$pr_number is in an unknown state. Skipping merge attempt."
+            else
+                echo "Attempting to auto-merge PR #$pr_number..."
+
+                # Attempt auto-merge and delete the branch if successful
+                gh pr merge $pr_number --merge --auto --delete-branch || echo "Failed to merge PR #$pr_number."
+            fi
+          done
