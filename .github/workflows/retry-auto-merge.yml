@@ -3,7 +3,7 @@ name: Auto Retry Merges for UNKNOWN PRs
 on:
   workflow_dispatch:  # Manual trigger for the workflow
   schedule:
-    - cron: '0 * * * *'  # Runs every hour (customize as needed)
+    - cron: '*/5 * * * *'  # Runs every hour (customize as needed)
 
 jobs:
   retry-unknown-prs:
