@@ -46,8 +46,6 @@ jobs:
 
             if [[ "$mergeable_status" == "CONFLICT" ]]; then
                 echo "PR #$pr_number has conflicts. Skipping merge attempt."
-            elif [[ "$mergeable_status" == "UNKNOWN" ]]; then
-                echo "PR #$pr_number is in an unknown state. Skipping merge attempt."
             else
                 echo "Attempting to auto-merge PR #$pr_number with 'dependencies' label..."
 
