@@ -1,16 +1,16 @@
-name: Auto Retry Dependencies Merges
+name: Auto Retry Failed Pull Requests Merge
 
 on:
+  workflow_dispatch:  # Allows manual triggering
   schedule:
-    - cron: '0 * * * *'  # Runs every hour
-  workflow_dispatch:  # Allows manual triggering of the workflow
+    - cron: '0 * * * *'  # Runs every hour, or customize as needed
 
 jobs:
-  retry-auto-merge:
+  auto-merge-failed-prs:
     runs-on: ubuntu-latest
 
     permissions:
-      pull-requests: write  # Ensure the token has write access for PRs
+      pull-requests: write  # Ensure the token has write access to PRs
 
     steps:
       - name: Checkout repository
@@ -22,34 +22,49 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh
 
-      - name: Get all open PRs with 'dependencies' label
-        id: pr_list
+      - name: Retry failed PRs with 'dependencies' label
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Pass GITHUB_TOKEN to gh CLI
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Pass the GITHUB_TOKEN to gh CLI
         run: |
-          # Get a list of PRs with 'dependencies' label and check for their merge status
+          # Get the list of open PRs with 'dependencies' label
           pr_list=$(gh pr list --state open --label "dependencies" --json number,mergeable -q '.[].number')
           echo "PR list with dependencies: $pr_list"
-          echo "::set-output name=pr_list::$pr_list"
-
-      - name: Retry failed auto-merges for 'dependencies' label
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Pass GITHUB_TOKEN to gh CLI
-        run: |
-          # Fetch PR numbers from the previous step
-          pr_list="${{ steps.pr_list.outputs.pr_list }}"
           
-          # Loop through each PR number to check mergeability and retry if failed
+          # Loop through the PR numbers and retry merging
           for pr_number in $pr_list; do
             # Check the mergeable status of each PR
             mergeable_status=$(gh pr view $pr_number --json mergeable -q '.mergeable')
 
             if [[ "$mergeable_status" == "CONFLICT" ]]; then
                 echo "PR #$pr_number has conflicts. Skipping merge attempt."
+            elif [[ "$mergeable_status" == "UNKNOWN" ]]; then
+                echo "PR #$pr_number is in an unknown state. Skipping merge attempt."
             else
-                echo "Attempting to auto-merge PR #$pr_number with 'dependencies' label..."
+                echo "Attempting to auto-merge PR #$pr_number..."
 
-                # Attempt auto-merge and delete the branch if successful
-                gh pr merge $pr_number --merge --auto --delete-branch || echo "Failed to merge PR #$pr_number."
+                # Attempt to merge the PR, if it fails, log the failure
+                if ! gh pr merge $pr_number --merge --auto --delete-branch; then
+                  echo "Failed to merge PR #$pr_number. Retrying in the next workflow run."
+                  echo "Failed PR #$pr_number" >> failed_prs.txt  # Save the failed PR for reprocessing later
+                fi
             fi
           done
+
+      - name: Retry Failed PRs in Subsequent Workflow
+        run: |
+          # If there are failed PRs, attempt to merge them in the next run
+          if [ -f failed_prs.txt ]; then
+            echo "Reprocessing failed PRs..."
+            failed_prs=$(cat failed_prs.txt)
+            for failed_pr in $failed_prs; do
+              pr_number=$(echo $failed_pr | awk '{print $NF}')  # Extract the PR number
+              echo "Attempting to re-merge PR #$pr_number..."
+              
+              # Retry the merge for the failed PR
+              if ! gh pr merge $pr_number --merge --auto --delete-branch; then
+                echo "Failed to re-merge PR #$pr_number after retry."
+              else
+                echo "Successfully re-merged PR #$pr_number."
+              fi
+            done
+          fi
