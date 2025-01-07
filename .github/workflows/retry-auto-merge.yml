@@ -1,8 +1,8 @@
-name: Auto Retry Failed PR Merges
+name: Auto Retry Dependencies Merges
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs every hour
+    - cron: '*/5 * * * *'  # Runs every hour
   workflow_dispatch:  # Allows manual triggering of the workflow
 
 jobs:
@@ -19,14 +19,24 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh
 
-      - name: Retry failed auto-merges
+      - name: Authenticate GitHub CLI
         run: |
-          # Authenticate with GitHub CLI
+          # Authenticate using the GITHUB_TOKEN provided by GitHub Actions
           echo "$GITHUB_TOKEN" | gh auth login --with-token
 
-          # Check all open PRs and attempt to merge those that failed auto-merge
-          pr_list=$(gh pr list --state open --json number,mergeable -q '.[].number')
+      - name: Get all open PRs with 'dependencies' label
+        id: pr_list
+        run: |
+          # Get a list of PRs with 'dependencies' label and check for their merge status
+          pr_list=$(gh pr list --state open --label "dependencies" --json number,mergeable -q '.[].number')
+          echo "PR list with dependencies: $pr_list"
+          echo "::set-output name=pr_list::$pr_list"
 
+      - name: Retry failed auto-merges for 'dependencies' label
+        run: |
+          # Fetch PR numbers from the previous step
+          pr_list="${{ steps.pr_list.outputs.pr_list }}"
+          
           # Loop through each PR number to check mergeability and retry if failed
           for pr_number in $pr_list; do
             # Check the mergeable status of each PR
@@ -37,7 +47,7 @@ jobs:
             elif [[ "$mergeable_status" == "UNKNOWN" ]]; then
                 echo "PR #$pr_number is in an unknown state. Skipping merge attempt."
             else
-                echo "Attempting to auto-merge PR #$pr_number..."
+                echo "Attempting to auto-merge PR #$pr_number with 'dependencies' label..."
 
                 # Attempt auto-merge and delete the branch if successful
                 gh pr merge $pr_number --merge --auto --delete-branch || echo "Failed to merge PR #$pr_number."
