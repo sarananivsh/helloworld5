@@ -34,12 +34,6 @@ jobs:
           for pr_number in $pr_list; do
             # Check the mergeable status of each PR
             mergeable_status=$(gh pr view $pr_number --json mergeable -q '.mergeable')
-
-            if [[ "$mergeable_status" == "CONFLICT" ]]; then
-                echo "PR #$pr_number has conflicts. Skipping merge attempt."
-            elif [[ "$mergeable_status" == "UNKNOWN" ]]; then
-                echo "PR #$pr_number is in an unknown state. Skipping merge attempt."
-            else
                 echo "Attempting to auto-merge PR #$pr_number..."
 
                 # Attempt to merge the PR, if it fails, log the failure
