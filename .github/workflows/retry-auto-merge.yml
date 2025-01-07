@@ -9,6 +9,9 @@ jobs:
   retry-auto-merge:
     runs-on: ubuntu-latest
 
+    permissions:
+      pull-requests: write  # Ensure the token has write access for PRs
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
