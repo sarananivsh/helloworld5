@@ -1,4 +1,4 @@
-name: Auto Merge PR and Delete Branch if 'dependencies' label is present
+name: Auto Merge PRs and Delete Branch if 'dependencies' label is present
 
 on:
   pull_request:
