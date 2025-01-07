@@ -43,16 +43,18 @@ jobs:
                 # Step 1: Add a comment to trigger a re-check (GitHub reprocesses the PR)
                 gh pr comment $pr_number --body "Re-triggering status checks for PR #$pr_number."
                 
-                # Step 2: Push an empty commit to trigger status re-evaluation (GitHub rechecks the mergeable state)
-                git checkout $pr_number
+                # Step 2: Fetch the PR and check it out (correct method)
+                gh pr checkout $pr_number  # Correct command to checkout the PR
+                
+                # Step 3: Push an empty commit to trigger status re-evaluation (GitHub rechecks the mergeable state)
                 git commit --allow-empty -m "Triggering status recheck for PR #$pr_number"
                 git push origin HEAD
                 
-                # Step 3: Wait a few seconds for status checks to update (optional)
+                # Step 4: Wait a few seconds for status checks to update (optional)
                 echo "Waiting for status checks to complete..."
                 sleep 30  # Wait for 30 seconds for status checks to complete
                 
-                # Step 4: Retry the merge
+                # Step 5: Retry the merge
                 echo "Attempting to auto-merge PR #$pr_number..."
                 if ! gh pr merge $pr_number --merge --auto --delete-branch; then
                   echo "Failed to merge PR #$pr_number despite re-triggering status checks."
