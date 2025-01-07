@@ -1,4 +1,4 @@
-name: Auto Retry Failed Pull Requests Merge
+name: Auto Retry Dependencies Merges
 
 on:
   workflow_dispatch:  # Allows manual triggering
@@ -22,27 +22,40 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gh
 
-      - name: Retry failed PRs with 'dependencies' label
+      - name: Retry PRs with 'dependencies' label, including 'UNKNOWN' status
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Pass the GITHUB_TOKEN to gh CLI
         run: |
-          # Get the list of open PRs with 'dependencies' label
+          # Get the list of open PRs with the 'dependencies' label
           pr_list=$(gh pr list --state open --label "dependencies" --json number,mergeable -q '.[].number')
           echo "PR list with dependencies: $pr_list"
           
-          # Loop through the PR numbers and retry merging
+          # Loop through each PR number and check if it can be merged
           for pr_number in $pr_list; do
             # Check the mergeable status of each PR
             mergeable_status=$(gh pr view $pr_number --json mergeable -q '.mergeable')
-                echo "Attempting to auto-merge PR #$pr_number..."
 
-                # Attempt to merge the PR, if it fails, log the failure
+            if [[ "$mergeable_status" == "CONFLICT" ]]; then
+                echo "PR #$pr_number has conflicts. Skipping merge attempt."
+            elif [[ "$mergeable_status" == "UNKNOWN" ]]; then
+                echo "PR #$pr_number is in 'UNKNOWN' state. Attempting to merge... (Retry)"
+                # Retry the merge for PR in 'UNKNOWN' state
                 if ! gh pr merge $pr_number --merge --auto --delete-branch; then
-                  echo "Failed to merge PR #$pr_number. Retrying in the next workflow run."
-                  echo "Failed PR #$pr_number" >> failed_prs.txt  # Save the failed PR for reprocessing later
+                  echo "Failed to merge PR #$pr_number despite being in 'UNKNOWN' state."
+                else
+                  echo "Successfully merged PR #$pr_number in 'UNKNOWN' state."
+                fi
+            else
+                echo "Attempting to auto-merge PR #$pr_number..."
+                # Attempt to merge the PR if it's not in 'CONFLICT' or 'UNKNOWN' state
+                if ! gh pr merge $pr_number --merge --auto --delete-branch; then
+                  echo "Failed to merge PR #$pr_number."
+                else
+                  echo "Successfully merged PR #$pr_number."
                 fi
             fi
           done
+
 
       - name: Retry Failed PRs in Subsequent Workflow
         run: |
